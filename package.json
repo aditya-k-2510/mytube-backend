@@ -8,7 +8,7 @@
   ],
   "license": "ISC",
   "author": "Aditya Khetrapal",
-  "type": "commonjs",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
