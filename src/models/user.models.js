@@ -12,7 +12,7 @@ const userSchema = new Schema({
         index: true
     },
 
-    username: {
+    email: {
         type: String,
         required: true,
         unique: true, 
@@ -56,9 +56,9 @@ const userSchema = new Schema({
     timestamps: true
 })
 userSchema.pre("save", async function(next){
-    if(!this.isModified("password")) return next();
+    if(!this.isModified("password")) return next;
     this.password = await bcrypt.hash(this.password, 8)//8 is random number
-    next()
+    return next
 });
 
 userSchema.methods.isPasswordCorrect = async function(password) {
