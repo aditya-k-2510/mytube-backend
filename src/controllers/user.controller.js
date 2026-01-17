@@ -15,7 +15,7 @@ const generateAccessAndRefreshToken = async (userId) => {
         return {accessToken, refreshToken}
     }
     catch(error) {
-        throw new ApiError(500, "Something went wrong while generating refersh and access token")
+        throw new ApiError(500, error.message||"Something went wrong while generating refersh and access token")
     }
 }
 
@@ -100,8 +100,8 @@ const loginUser = asyncHandler(async(req, res) => {
     const user = await User.findOne({username})
     if(!user) throw new ApiError(400, "couldn't find such user")
     
-    const isPasswordValid = await User.findOne({username})
-    if(isPasswordValid) throw new ApiError(401, "incorrect password")
+    const isPasswordValid = await user.isPasswordCorrect(password)
+    if(!isPasswordValid) throw new ApiError(401, "incorrect password")
     
     const {accessToken, refreshToken} = await generateAccessAndRefreshToken(user._id)
     const loggedInUser = await User.findById(user._id).select("-password -refreshToken")
@@ -114,19 +114,18 @@ const loginUser = asyncHandler(async(req, res) => {
     .cookie("refreshToken", refreshToken, options)
     .json(
         new ApiResponse(200, {
-            user: loggedInUser, accessToken, refreshToken
+            user: loggedInUser, accessToken
         }, "user logged in successfully")
     )
 }) 
 
 const logoutUser = asyncHandler(async(req, res) => {
-    User.findByIDAndUpdate(req.user._id, {
-        $set: {
-            refreshToken: undefined
-        }
-    }, {
-        new: true
-    })
+
+    await User.findByIdAndUpdate(
+    req.user._id,
+    { $unset: { refreshToken: 1 } },
+    { new: true }
+    )
     const options = {
         httpOnly : true, 
         secure: true
@@ -134,8 +133,10 @@ const logoutUser = asyncHandler(async(req, res) => {
     return res
     .status(200)
     .clearCookie("accessToken", options)
-    .clearCooker("refreshToken", options)
+    .clearCookie("refreshToken", options)
     .json(new ApiResponse(200, {}, "User logged out successfully"))
+
+    
 })
 
 

@@ -11,7 +11,7 @@ app.use(cors({//app.use() is for configuration
 app.use(express.json({limit:"16kb"}))
 app.use(express.urlencoded({extended: true, limit: "16kb"}))
 app.use(express.static("public"))//for logos, image, etc.
-
+app.use(cookieParser())
 
 //import routes
 import userRouter from "./routes/user.routes.js"
