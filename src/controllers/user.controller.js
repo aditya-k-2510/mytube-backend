@@ -4,7 +4,7 @@ import {User} from "../models/user.model.js"
 import {uploadOnCloudinary} from "../utils/cloudinary.js"
 import {ApiResponse} from "../utils/ApiResponse.js"
 import jwt from "jsonwebtoken"
-
+import mongoose from "mongoose"
 
 const generateAccessAndRefreshToken = async (userId) => {
     try {
@@ -50,6 +50,7 @@ const registerUser = asyncHandler( async(req, res)=>{
     //check for images, avatar should be there
     const avatarLocalPath = req.files?.avatar[0]?.path
     const coverImageLocalPath = req.files?.coverImage[0]?.path
+    
     // console.log(avatarLocalPath)
     if (!avatarLocalPath) {
         throw new ApiError(400, "Avatar file is required")
@@ -60,7 +61,7 @@ const registerUser = asyncHandler( async(req, res)=>{
     const coverImage = await uploadOnCloudinary(coverImageLocalPath)
     // console.log(req.files)
     if (!avatar) {
-        throw new ApiError(400, "Avatar file is required")
+        throw new ApiError(400, "error in uploading to cloudinary")
     }
 
     //creating entry in database
@@ -151,36 +152,36 @@ const logoutUser = asyncHandler( async(req, res) => {
 
 const refreshUser = asyncHandler( async(req, res) => {
     try {
-        const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
-        if (!incomingRefreshToken) {
-            throw new ApiError(401, "unauthorized request")
-        }
+            const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
+            if (!incomingRefreshToken) {
+                throw new ApiError(401, "unauthorized request")
+            }
 
-        const decodedToken = jwt.verify(incomingRefreshToken, process.env.REFRESH_TOKEN_SECRET)
-        const user = await User.findById(decodedToken?._id)
+            const decodedToken = jwt.verify(incomingRefreshToken, process.env.REFRESH_TOKEN_SECRET)
+            const user = await User.findById(decodedToken?._id)
 
-        if(!user) throw new ApiError(401, "invalid refresh token")
-        if(incomingRefreshToken != user?.refreshToken) {
-            throw new ApiError(401, "Refresh token is expired or used")
-        }
+            if(!user) throw new ApiError(401, "invalid refresh token")
+            if(incomingRefreshToken != user?.refreshToken) {
+                throw new ApiError(401, "Refresh token is expired or used")
+            }
 
-        const options = {
-            httpOnly: true,
-            secure: true
-        }
-        
-        const {accessToken, refreshToken} = await generateAccessAndRefreshToken(user._id)
-        return res
-        .status(200)
-        .cookie("accessToken", accessToken, options)
-        .cookie("refreshToken", refreshToken, options)
-        .json(
-            new ApiResponse(
-                200, 
-                {accessToken, refreshToken},
-                "Access Token refreshed"
+            const options = {
+                httpOnly: true,
+                secure: true
+            }
+            
+            const {accessToken, refreshToken} = await generateAccessAndRefreshToken(user._id)
+            return res
+            .status(200)
+            .cookie("accessToken", accessToken, options)
+            .cookie("refreshToken", refreshToken, options)
+            .json(
+                new ApiResponse(
+                    200, 
+                    {accessToken, refreshToken},
+                    "Access Token refreshed"
+                )
             )
-        )
     } catch(error) {
         throw new ApiError(401, error?.message||"invalid refresh token")
     }
@@ -200,7 +201,7 @@ const changeCurrentPassword = asyncHandler( async (req, res) => {
 const getCurrentUser = asyncHandler( async (req, res) => {
     return res
     .status(200)
-    .json(new ApiResponse(200, res.user, "current user fetched successfully"))
+    .json(new ApiResponse(200, req.user, "current user fetched successfully"))
 })
 
 const updateAccountDetails = asyncHandler( async (req, res) => {
@@ -208,17 +209,17 @@ const updateAccountDetails = asyncHandler( async (req, res) => {
     if(!fullName || !email) {
         throw new ApiError(400, "All fields are required")
     }
-    const user = User.findByIdAndUpdate(
+    const user = await User.findByIdAndUpdate(
         req.user?._id,
         {
             $set: {
-                fullName: fullName,// or only fullName as both name are same
+                fullName: fullName, // or only fullName as both name are same
                 email: email
             }
         },
         { new: true }
     )
-    .select("-password -accessToken")
+    .select("-password -refreshToken")
 
     res
     .status(200)
@@ -242,7 +243,7 @@ const updateUserAvatar = asyncHandler( async (req, res) => {
             }
         },
         { new: true }
-    ).select("-password")
+    ).select("-password -refreshToken")
 
     res
     .status(200)
@@ -264,7 +265,7 @@ const updateUserCoverImage = asyncHandler( async (req, res) => {
             }
         },
         { new: true }
-    ).select("-password")
+    ).select("-password -refreshToken")
 
     res
     .status(200)
@@ -373,7 +374,7 @@ const getWatchHistory = asyncHandler( async (req, res) => {
                     {
                         $addFields: {
                             owner: {
-                                $first: "owner"
+                                $first: "$owner"
                             }
                         }
                     }
@@ -381,6 +382,10 @@ const getWatchHistory = asyncHandler( async (req, res) => {
             }
         }
     ])
+
+    if(!user.length) {
+        throw new ApiError(404, "User not found");
+    }
     return res
     .status(200)
     .json(new ApiResponse(200, user[0].watchHistory, "watch history fetched"))

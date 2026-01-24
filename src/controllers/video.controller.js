@@ -1,4 +1,4 @@
-import mongoose, {isValidObject} from "mongoose"
+import mongoose from "mongoose"
 import { Video } from "../models/video.model.js"
 import { User } from "../models/user.model.js"
 import { ApiError } from "../utils/ApiError.js"
@@ -124,12 +124,44 @@ const getAllVideos = asyncHandler( async (req, res) => {
     ])
 
     const totalVideos = totalVideosAgg[0]?.total || 0
-    
+
     return res.status(200)
     .json(new ApiResponse(200, {
         videos, 
         totalVideos, 
         currentPage: pageNumber, 
         totalPages: Math.ceil(totalVideos/pageLimit) 
-    }))
+    }, "videos fetched"))
 })
+
+const publishAVideo = asyncHandler(async (req, res) => {
+    const { title, description } = req.body
+    // TODO: get video, upload to cloudinary, create video
+    const videoLocalPath = req.files?.video[0]?.path
+    const thumbnailLocalPath = req.files?.thumbnail[0]?.path
+    if(!videoLocalPath||!title||!description||!thumbnailLocalPath) throw new ApiError(400, "all fields are required")
+    const uploadedVideo = await uploadOnCloudinary(videoLocalPath)
+    const uploadedThumbnail = await uploadOnCloudinary(thumbnailLocalPath)
+
+    if(!uploadedVideo||!uploadedThumbnail) throw new ApiError(500, "couldn't upload file/s on cloudinary")
+    const video = await Video.create({
+        videoFile: uploadedVideo.url, 
+        thumbnail: uploadedThumbnail.url, 
+        title, 
+        description,
+        duration: uploadedVideo.duration, 
+        owner: req.user._id
+    })  
+
+    return res
+    .status(201)
+    .json(new ApiResponse(201, {
+        video
+    }, "video uploaded successfully"))
+})
+
+
+export {
+    getAllVideos,
+    publishAVideo
+}
