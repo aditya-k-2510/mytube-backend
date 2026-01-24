@@ -159,8 +159,17 @@ const publishAVideo = asyncHandler(async (req, res) => {
     }, "video uploaded successfully"))
 })
 
+const getVideoById = asyncHandler(async (req, res) => {
+    const { videoId } = req.params
+    const video = await Video.findById(videoId)
+    if(!video) throw new ApiError(404, "video not found")
+    return res
+    .status(200)
+    .json(new ApiResponse(200, video, "video fetched successfully"))
+})
 
 export {
     getAllVideos,
-    publishAVideo
+    publishAVideo,
+    getVideoById
 }
