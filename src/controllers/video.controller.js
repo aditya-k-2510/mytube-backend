@@ -136,7 +136,6 @@ const getAllVideos = asyncHandler( async (req, res) => {
 
 const publishAVideo = asyncHandler(async (req, res) => {
     const { title, description } = req.body
-    // TODO: get video, upload to cloudinary, create video
     const videoLocalPath = req.files?.video[0]?.path
     const thumbnailLocalPath = req.files?.thumbnail[0]?.path
     if(!videoLocalPath||!title||!description||!thumbnailLocalPath) throw new ApiError(400, "all fields are required")
