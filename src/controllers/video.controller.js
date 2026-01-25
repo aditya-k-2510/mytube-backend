@@ -24,6 +24,7 @@ const getAllVideos = asyncHandler(async (req, res) => {
       throw new ApiError(400, "Invalid pagination parameters");
 
    const matchStage = {
+      isPublished: true,
       ...(userId && {
          owner: new mongoose.Types.ObjectId(userId),
       }),
@@ -146,6 +147,7 @@ const publishAVideo = asyncHandler(async (req, res) => {
 
    if (!uploadedVideo || !uploadedThumbnail)
       throw new ApiError(500, "couldn't upload file/s on cloudinary");
+
    const video = await Video.create({
       videoFile: uploadedVideo.url,
       thumbnail: uploadedThumbnail.url,
@@ -168,11 +170,104 @@ const publishAVideo = asyncHandler(async (req, res) => {
 
 const getVideoById = asyncHandler(async (req, res) => {
    const { videoId } = req.params;
-   const video = await Video.findById(videoId);
-   if (!video) throw new ApiError(404, "video not found");
+
+   const video = await Video.aggregate([
+      {
+         $match: {   
+            _id: new mongoose.Types.ObjectId(videoId)
+         }
+      },
+      {
+         $lookup: {
+            from: "users",
+            localField: "owner",
+            foreignField: "_id",
+            as: "owner",
+            pipeline: [
+               {
+                  $lookup: {
+                     from: "subscriptions",
+                     localField: "_id",
+                     foreignField: "channel",
+                     as: "subscribers",
+                  }
+               },
+               {
+                  $addFields: {
+                     subscriberCount:{
+                        $size: "$subscribers"
+                     },
+                     isSubscribed: {
+                        $cond: {
+                           if: {
+                                 $in: [
+                                    new mongoose.Types.ObjectId(req.user?._id),
+                                    "$subscribers.subscriber",
+                                 ],
+                              },
+                           then: true,
+                           else: false,
+                        }
+                     }
+                  }
+               },
+               {
+                  $project: {
+                        username: 1,
+                        avatar: 1,
+                        subscriberCount: 1,
+                        isSubscribed: 1
+                     }
+               }
+            ]
+         }
+      },
+      {
+         $addFields: {
+            owner: { 
+               $first: "$owner" 
+            },
+         },
+      },
+      {
+         $lookup: {
+            from: "likes",
+            localField: "_id",
+            foreignField: "video",
+            as: "likes"
+         }
+      },
+      {
+         $addFields: {
+            likesCount: {
+               $size: "$likes"
+            }
+         }
+      },
+      {
+         $project: {
+            owner: 1,
+            likesCount: 1,
+            thumbnail: 1,
+            videoFile: 1,
+            title: 1,
+            description: 1, 
+            duration: 1,
+            views: 1,
+            isPublished: 1
+         }
+      }
+   ])
+
+   if(video.length==0) throw new ApiError(404, "Video not found")
+
    return res
       .status(200)
-      .json(new ApiResponse(200, video, "video fetched successfully"));
+      .json(new ApiResponse(200, video[0], "video fetched successfully"));
 });
 
-export { getAllVideos, publishAVideo, getVideoById };
+export { 
+         getAllVideos, 
+         publishAVideo, 
+         getVideoById
+};
