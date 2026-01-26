@@ -4,9 +4,12 @@ import { User } from "../models/user.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import { 
+         uploadOnCloudinary,
+         deleteFromCloudinary
+      } from "../utils/cloudinary.js";
 
-const getAllVideos = asyncHandler(async (req, res) => {
+const getAllVideos = asyncHandler( async (req, res) => {
    const { page = 1, limit = 10, query, sortBy, sortType, userId } = req.query;
 
    if (userId && !mongoose.isValidObjectId(userId))
@@ -136,7 +139,7 @@ const getAllVideos = asyncHandler(async (req, res) => {
    );
 });
 
-const publishAVideo = asyncHandler(async (req, res) => {
+const publishAVideo = asyncHandler( async (req, res) => {
    const { title, description } = req.body;
    const videoLocalPath = req.files?.video[0]?.path;
    const thumbnailLocalPath = req.files?.thumbnail[0]?.path;
@@ -168,7 +171,7 @@ const publishAVideo = asyncHandler(async (req, res) => {
    );
 });
 
-const getVideoById = asyncHandler(async (req, res) => {
+const getVideoById = asyncHandler( async (req, res) => {
    const { videoId } = req.params;
 
    const video = await Video.aggregate([
@@ -266,8 +269,94 @@ const getVideoById = asyncHandler(async (req, res) => {
       .json(new ApiResponse(200, video[0], "video fetched successfully"));
 });
 
+const updateVideo = asyncHandler( async (req, res) => {
+   const { videoId } = req.params
+   const video = await Video.findById(videoId)
+   if(!video) throw new ApiError(404, "video not found")
+   if (!video.owner.equals(req.user._id)) {
+      throw new ApiError(401, "Unauthorized request")
+   }
+   
+   const { title, description } = req.body
+   
+   const thumbnailLocalPath = req.file?.path
+   const updatedDetails = {}
+   if(title) updatedDetails.title = title
+
+   if(description) updatedDetails.description = description
+
+   if(thumbnailLocalPath) {
+      const thumbnail = await uploadOnCloudinary(thumbnailLocalPath)
+      if(!thumbnail) throw new ApiError(500, "error in uploading to cloudinary")
+      updatedDetails.thumbnail = thumbnail.url
+   }
+
+   if(!title&&!description&&!thumbnailLocalPath) throw new ApiError(400, "atleast one field is required")
+   const updatedVideo = await  Video.findByIdAndUpdate(
+      videoId, 
+      {
+         $set: updatedDetails
+      },
+      {
+         new: true
+      }
+   )
+   return res
+   .status(200)
+   .json(new ApiResponse(200, updatedVideo, "video updated successfully"))
+})
+
+const deleteVideo = asyncHandler( async (req, res) => {
+
+   const { videoId } = req.params
+   const video = await Video.findById(videoId)
+
+   if (!video) throw new ApiError(404, "Video not found")
+
+   if (!video.owner.equals(req.user._id)) {
+      throw new ApiError(401, "Unauthorized request")
+   }
+
+   try {
+      if (video.thumbnail) await deleteFromCloudinary(video.thumbnail)
+   } catch (err) {
+      console.log("Cloudinary delete failed:", err.message)
+   }
+   try {
+      if (video.videoFile) await deleteFromCloudinary(video.videoFile)
+   } catch (err) {
+      console.log("Cloudinary delete failed:", err.message)
+   }
+      
+   await video.deleteOne()
+
+   return res
+      .status(200)
+      .json(new ApiResponse(200, null, "Video deleted successfully"))
+})
+
+const togglePublishStatus = asyncHandler( async (req, res) => {
+   const { videoId } = req.params
+   const video = await Video.findById(videoId)
+
+   if(!video) throw new ApiError(404, "video not found")
+   
+   if (!video.owner.equals(req.user._id)) {
+      throw new ApiError(401, "Unauthorized request")
+   }
+   video.isPublished = !video.isPublished
+   await video.save()
+
+   return res
+   .status(200)
+   .json(new ApiResponse(200, video, "publish status changed"))
+})
+
 export { 
          getAllVideos, 
          publishAVideo, 
-         getVideoById
+         getVideoById,
+         updateVideo,
+         deleteVideo,
+         togglePublishStatus
 };
