@@ -59,10 +59,10 @@ const getChannelVideos = asyncHandler(async (req, res) => {
     const userId = req.user._id     
     const pageNumber = Number(page)
     const pageLimit = 10
-    const skip = (pageNumber - 1) * pageLimit;
+    const skip = (pageNumber - 1) * pageLimit
     
     if ( pageNumber < 1 )
-        throw new ApiError(400, "Invalid pagination parameters");
+        throw new ApiError(400, "Invalid pagination parameters")
         
     const sortField = "createdAt";
     const sortOrder = -1
