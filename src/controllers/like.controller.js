@@ -151,7 +151,9 @@ const getLikedVideos = asyncHandler(async (req, res) => {
         200, 
         {
             videos,
-            totalVideos: total
+            totalVideos: total,
+            totalPages: Math.ceil(total / pageLimit),
+            currentPage: pageNumber
         }, "liked videos fetched successfully"
     ))
 })
