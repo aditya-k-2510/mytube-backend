@@ -29,7 +29,7 @@ const getAllVideos = asyncHandler( async (req, res) => {
    const matchStage = {
       isPublished: true,
       ...(userId && {
-         owner: new mongoose.Types.ObjectId(userId),
+         owner: new mongoose.Types.ObjectId(userId)
       }),
       ...(query && {
          $or: [
