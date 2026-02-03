@@ -25,7 +25,7 @@ import healthCheckRouter from "./routes/healthcheck.routes.js"
 import dashboardRouter from "./routes/dashboard.routes.js"
 import likeRouter from "./routes/like.routes.js"
 import commentRouter from "./routes/comment.routes.js"
-
+import playlistRouter from "./routes/playlist.routes.js"
 
 //routes declaration
 app.use("/api/v1/users", userRouter)
@@ -36,5 +36,6 @@ app.use("/api/v1/healthcheck", healthCheckRouter)
 app.use("/api/v1/dashboard", dashboardRouter)
 app.use("/api/v1/likes", likeRouter)
 app.use("/api/v1/comments", commentRouter)
+app.use("/api/v1/playlist", playlistRouter)
 
 export { app }
