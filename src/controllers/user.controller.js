@@ -328,7 +328,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
                      $in: [
                         new mongoose.Types.ObjectId(req.user?._id),
                         "$subscribers.subscriber",
-                     ]
+                     ],
                   },
                   then: true,
                   else: false,

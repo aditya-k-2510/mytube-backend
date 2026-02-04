@@ -22,8 +22,8 @@ const playlistSchema = new Schema(
       },
       public: {
          type: Boolean,
-         default: true
-      }
+         default: true,
+      },
    },
    {
       timestamps: true,
@@ -31,13 +31,13 @@ const playlistSchema = new Schema(
 );
 
 playlistSchema.index(
-   { 
-      name: 1, 
-      owner: 1 
-   }, 
-   { 
-      unique: true 
+   {
+      name: 1,
+      owner: 1,
+   },
+   {
+      unique: true,
    }
-)
+);
 
 export const Playlist = mongoose.model("Playlist", playlistSchema);

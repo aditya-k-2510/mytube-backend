@@ -23,5 +23,5 @@ const likeSchema = new Schema(
       timestamps: true,
    }
 );
-likeSchema.index({ video: 1, likedBy: 1 }, { unique: true }) // for avoiding duplicates
+likeSchema.index({ video: 1, likedBy: 1 }, { unique: true }); // for avoiding duplicates
 export const Like = mongoose.model("Like", likeSchema);
