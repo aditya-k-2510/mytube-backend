@@ -373,6 +373,12 @@ const getWatchHistory = asyncHandler(async (req, res) => {
             as: "watchHistory",
             pipeline: [
                {
+                  $match: {
+                     isPublished: true, 
+                  }
+               },
+               {
+                  
                   $lookup: {
                      from: "users",
                      localField: "owner",
@@ -390,12 +396,30 @@ const getWatchHistory = asyncHandler(async (req, res) => {
                   },
                },
                {
+                  $match: {
+                     owner: {
+                        $ne: []
+                     }
+                  }
+               },
+               {
                   $addFields: {
                      owner: {
                         $first: "$owner",
                      },
                   },
                },
+               {
+                  $project: {
+                     owner: 1,
+                     thumbnail: 1,
+                     title: 1,
+                     _id: 1,
+                     description: 1,
+                     duration: 1,
+                     views: 1
+                  }
+               }
             ],
          },
       },
