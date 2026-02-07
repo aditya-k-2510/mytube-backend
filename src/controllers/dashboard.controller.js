@@ -73,19 +73,29 @@ const getChannelVideos = asyncHandler(async (req, res) => {
          },
       },
       {
-         $sort: {
-            [sortField]: sortOrder,
-         },
-      },
-      {
          $facet: {
             videos: [
+               {
+                  $sort: {
+                     [sortField]: sortOrder,
+                  },
+               },
                {
                   $skip: skip,
                },
                {
                   $limit: pageLimit,
                },
+               {
+                  $project: {
+                     thumbnail: 1,
+                     createdAt: 1, 
+                     description: 1,
+                     title: 1,
+                     _id: 1,
+                     isPublished: 1
+                  }
+               }
             ],
             totalCount: [
                {
