@@ -58,6 +58,7 @@ const getUserPlaylists = asyncHandler(async (req, res) => {
             name: 1,
             description: 1,
             videoCount: 1,
+            _id: 1
          },
       },
    ]);
@@ -90,6 +91,7 @@ const getPlaylistById = asyncHandler(async (req, res) => {
                      views: 1,
                      thumbnail: 1,
                      duration: 1,
+                     _id: 1
                   },
                },
             ],
