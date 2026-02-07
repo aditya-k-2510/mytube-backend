@@ -114,6 +114,23 @@ const getLikedVideos = asyncHandler(async (req, res) => {
             localField: "video",
             foreignField: "_id",
             as: "video",
+            pipeline: [
+               { 
+                  $match: 
+                  { isPublished: true 
+
+                  } 
+               },
+               {
+                  $project: {
+                     _id: 1,
+                     thumbnail: 1,
+                     title: 1,
+                     description: 1,
+                     createdAt: 1
+                  }
+               }
+            ]
          },
       },
       {
