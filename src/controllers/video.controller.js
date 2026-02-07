@@ -99,7 +99,7 @@ const getAllVideos = asyncHandler(async (req, res) => {
       },
       {
          $project: {
-            videoFile: 1,
+            _id: 1,
             thumbnail: 1,
             title: 1,
             description: 1,
@@ -158,14 +158,11 @@ const publishAVideo = asyncHandler(async (req, res) => {
       description,
       duration: uploadedVideo.duration,
       owner: req.user._id,
-   });
+   }).select("-videoFile");
 
    return res.status(201).json(
       new ApiResponse(
-         201,
-         {
-            video,
-         },
+         201, video,
          "video uploaded successfully"
       )
    );
@@ -252,7 +249,7 @@ const getVideoById = asyncHandler(async (req, res) => {
             owner: 1,
             likesCount: 1,
             thumbnail: 1,
-            videoFile: 1,
+            _id: 1,
             title: 1,
             description: 1,
             duration: 1,
@@ -302,7 +299,7 @@ const updateVideo = asyncHandler(async (req, res) => {
       {
          new: true,
       }
-   );
+   ).select("-videoFile");
    return res
       .status(200)
       .json(new ApiResponse(200, updatedVideo, "video updated successfully"));
@@ -338,7 +335,7 @@ const deleteVideo = asyncHandler(async (req, res) => {
 
 const togglePublishStatus = asyncHandler(async (req, res) => {
    const { videoId } = req.params;
-   const video = await Video.findById(videoId);
+   const video = await Video.findById(videoId).select("-videoFile");
 
    if (!video) throw new ApiError(404, "video not found");
 
@@ -347,7 +344,7 @@ const togglePublishStatus = asyncHandler(async (req, res) => {
    }
    video.isPublished = !video.isPublished;
    await video.save();
-
+   
    return res
       .status(200)
       .json(new ApiResponse(200, video, "publish status changed"));
