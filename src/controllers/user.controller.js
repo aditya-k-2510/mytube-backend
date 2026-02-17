@@ -235,6 +235,11 @@ const updateAccountDetails = asyncHandler(async (req, res) => {
    if (!fullName || !email) {
       throw new ApiError(400, "All fields are required");
    }
+   if (email) {
+      const userWithSameEmail = await User.findOne({ email: email })
+      if(userWithSameEmail) 
+         throw new ApiError(409, "user with the email already exist");
+   }
    const user = await User.findByIdAndUpdate(
       req.user?._id,
       {
