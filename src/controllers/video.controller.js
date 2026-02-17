@@ -151,15 +151,18 @@ const publishAVideo = asyncHandler(async (req, res) => {
    if (!uploadedVideo || !uploadedThumbnail)
       throw new ApiError(500, "couldn't upload file/s on cloudinary");
 
-   const video = await Video.create({
+   const createdVideo = await Video.create({
       videoFile: uploadedVideo.url,
       thumbnail: uploadedThumbnail.url,
       title,
       description,
       duration: uploadedVideo.duration,
       owner: req.user._id,
-   }).select("-videoFile");
+   })
 
+   const video = await Video.findById(createdVideo._id)
+   .select("-videoFile");
+   
    return res.status(201).json(
       new ApiResponse(
          201, video,
