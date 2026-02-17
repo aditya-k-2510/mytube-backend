@@ -38,4 +38,13 @@ app.use("/api/v1/likes", likeRouter);
 app.use("/api/v1/comments", commentRouter);
 app.use("/api/v1/playlist", playlistRouter);
 
+// Global Error Handler
+app.use((err, req, res, next) => {
+   return res.status(err.statusCode || 500).json({
+      success: false,
+      message: err.message || "Something went wrong",
+      errors: err.errors || [],
+   });
+});
+
 export { app };
