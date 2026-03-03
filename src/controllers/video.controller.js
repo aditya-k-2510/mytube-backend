@@ -1,9 +1,12 @@
 import mongoose from "mongoose";
+import crypto from "crypto"
 import { Video } from "../models/video.model.js";
 import { User } from "../models/user.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { mergeChunks } from "../utils/mergeChunks.js";
+import fs from "fs";
 import {
    uploadOnCloudinary,
    deleteFromCloudinary,
@@ -138,6 +141,60 @@ const getAllVideos = asyncHandler(async (req, res) => {
       )
    );
 });
+
+const initVideoUpload = asyncHandler( async (req, res) => {
+   const { title, description } = req.body;
+   if (!req.file) throw new ApiError(400, "thumbnail required");
+   const thumbnailPath = req.file.path 
+   if(!thumbnailPath) throw new ApiError(500, "error in uploading")
+   const uploadedThumbnail = await uploadOnCloudinary(thumbnailPath);
+   const fileId = crypto.randomUUID();
+   global.uploadSessions = global.uploadSessions || {};
+   global.uploadSessions[fileId] = {
+      title,
+      description,
+      thumbnailUrl: uploadedThumbnail.url,
+      ownerId: req.user._id
+   };
+   return res
+   .status(200)
+   .json(new ApiResponse(200, fileId, "video upload started"))
+})
+
+const uploadVideoChunk = asyncHandler( async (req, res) => {
+   const { totalChunks, fileName } = req.body;
+   const { fileId } = req.params;
+   const chunkDir = `./public/temp/chunkUploads/${fileId}`;
+   if(!fs.existsSync(chunkDir)) throw new ApiError(500, "error in uploading")
+   const uploadedChunks = fs.readdirSync(chunkDir);
+   if (uploadedChunks.length == Number(totalChunks)) {
+      const session = global.uploadSessions[fileId];
+      if(!session) return res.status(410).json(new ApiResponse(410, "oh no! session expired"));
+      const finalPath = await mergeChunks(fileId, fileName, totalChunks);
+      if(!finalPath) {
+         throw new ApiError(500, "final path error")
+      }
+      const uploadedVideo = await uploadOnCloudinary(finalPath);
+      fs.rmdirSync(chunkDir)
+      const video = await Video.create({
+         videoFile: uploadedVideo.url,
+         thumbnail: session.thumbnailUrl,
+         title: session.title,
+         description: session.description,
+         duration: uploadedVideo.duration,
+         owner: session.ownerId
+      });
+      delete global.uploadSessions[fileId];
+      return res
+      .status(201)
+      .json(new ApiResponse(
+         201, video, "video uploaded successfully"
+      ));
+   }
+   return res
+   .status(200)
+   .json(new ApiResponse(200, null, "chunk uploaded"))
+});   
 
 const publishAVideo = asyncHandler(async (req, res) => {
    const { title, description } = req.body;
@@ -360,4 +417,6 @@ export {
    updateVideo,
    deleteVideo,
    togglePublishStatus,
+   initVideoUpload,
+   uploadVideoChunk
 };
