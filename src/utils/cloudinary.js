@@ -21,7 +21,7 @@ const uploadOnCloudinary = async (localFilePath) => {
       console.log("file uploaded on cloudinary:", response.url);
       if (fs.existsSync(localFilePath)) {
             fs.unlinkSync(localFilePath);
-        } // remove locally saved files as
+        } // remove locally saved files 
       return response;
    } catch (error) {
       console.log(error);
