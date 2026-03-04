@@ -25,7 +25,7 @@ router
       upload.single("thumbnail"),
       initVideoUpload)
 router
-   .route("/chunk-upload/:fileId")
+   .route("/chunk-upload/:fileId/:chunkIndex")
    .post(
       uploadChunk.single("chunk"),
       uploadVideoChunk)
