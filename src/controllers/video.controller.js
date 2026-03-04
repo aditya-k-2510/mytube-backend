@@ -170,12 +170,18 @@ const uploadVideoChunk = asyncHandler( async (req, res) => {
    if (uploadedChunks.length == Number(totalChunks)) {
       const session = global.uploadSessions[fileId];
       if(!session) return res.status(410).json(new ApiResponse(410, "oh no! session expired"));
+      const existFinalPath = `./public/temp/chunkUploads/${fileId}/${fileName}`;
+      if (fs.existsSync(existFinalPath)) {
+         return res
+                  .status(200)
+                  .json(new ApiResponse(200, null, "already merged"));
+      }
+
       const finalPath = await mergeChunks(fileId, fileName, totalChunks);
       if(!finalPath) {
          throw new ApiError(500, "final path error")
       }
       const uploadedVideo = await uploadOnCloudinary(finalPath);
-      fs.rmdirSync(chunkDir)
       const video = await Video.create({
          videoFile: uploadedVideo.url,
          thumbnail: session.thumbnailUrl,
@@ -185,6 +191,7 @@ const uploadVideoChunk = asyncHandler( async (req, res) => {
          owner: session.ownerId
       });
       delete global.uploadSessions[fileId];
+      fs.rmSync(chunkDir, { recursive: true, force: true });
       return res
       .status(201)
       .json(new ApiResponse(
