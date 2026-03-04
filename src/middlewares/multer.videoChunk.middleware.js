@@ -12,7 +12,7 @@ const storage = multer.diskStorage({
         cb(null, dir);
     },
     filename: function (req, file, cb) {
-        const { chunkIndex } = req.body;
+        const { chunkIndex } = req.params;
         cb(null, chunkIndex); 
     }
 });
