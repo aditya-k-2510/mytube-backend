@@ -168,6 +168,7 @@ const uploadVideoChunk = asyncHandler( async (req, res) => {
    if(!fs.existsSync(chunkDir)) throw new ApiError(500, "error in uploading")
    const uploadedChunks = fs.readdirSync(chunkDir);
    if (uploadedChunks.length == Number(totalChunks)) {
+      await new Promise(resolve => setTimeout(resolve, 500));
       const session = global.uploadSessions[fileId];
       if(!session) return res.status(410).json(new ApiResponse(410, "oh no! session expired"));
       const existFinalPath = `./public/temp/chunkUploads/${fileId}/${fileName}`;
