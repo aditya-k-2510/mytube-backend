@@ -162,47 +162,74 @@ const initVideoUpload = asyncHandler( async (req, res) => {
 })
 
 const uploadVideoChunk = asyncHandler( async (req, res) => {
-   const { totalChunks, fileName } = req.body;
+   try{
+      const { totalChunks, fileName } = req.body;
+      const { fileId } = req.params;
+      const chunkDir = `./public/temp/chunkUploads/${fileId}`;
+      if(!fs.existsSync(chunkDir)) throw new ApiError(500, "error in uploading")
+      const uploadedChunks = fs
+                              .readdirSync(chunkDir)
+                              .filter(f => !f.includes(".") && f !== "merging.lock");
+      if (uploadedChunks.length == Number(totalChunks)) {
+         await new Promise(resolve => setTimeout(resolve, 500));
+         const session = global.uploadSessions[fileId];
+         if(!session) return res.status(410).json(new ApiResponse(410, "oh no! session expired"));
+         const existFinalPath = `./public/temp/chunkUploads/${fileId}/${fileName}`;
+         if (fs.existsSync(existFinalPath)) {
+            return res
+                     .status(200)
+                     .json(new ApiResponse(200, null, "already merged"));
+         }
+         const mergingDir = `${chunkDir}_merging`;
+         try {
+            fs.renameSync(chunkDir, mergingDir);
+         } catch {
+            return res
+               .status(200)
+               .json(new ApiResponse(200, null, "merge already in progress"));
+         }
+         const finalPath = await mergeChunks(fileId, fileName, totalChunks);
+         if(!finalPath) {
+            throw new ApiError(500, "final path error")
+         }
+         const uploadedVideo = await uploadOnCloudinary(finalPath);
+         const video = await Video.create({
+            videoFile: uploadedVideo.url,
+            thumbnail: session.thumbnailUrl,
+            title: session.title,
+            description: session.description,
+            duration: uploadedVideo.duration,
+            owner: session.ownerId
+         });
+         delete global.uploadSessions[fileId];
+         fs.rmSync(mergingDir, { recursive: true, force: true });
+         return res
+         .status(201)
+         .json(new ApiResponse(
+            201, video, "video uploaded successfully"
+         ));
+      }
+      return res
+      .status(200)
+      .json(new ApiResponse(200, null, "chunk uploaded"))
+   } catch(err) {
+      console.log(err)
+   }
+});   
+
+const getUploadStatus = asyncHandler( async(req, res) => {
    const { fileId } = req.params;
    const chunkDir = `./public/temp/chunkUploads/${fileId}`;
-   if(!fs.existsSync(chunkDir)) throw new ApiError(500, "error in uploading")
-   const uploadedChunks = fs.readdirSync(chunkDir);
-   if (uploadedChunks.length == Number(totalChunks)) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const session = global.uploadSessions[fileId];
-      if(!session) return res.status(410).json(new ApiResponse(410, "oh no! session expired"));
-      const existFinalPath = `./public/temp/chunkUploads/${fileId}/${fileName}`;
-      if (fs.existsSync(existFinalPath)) {
-         return res
-                  .status(200)
-                  .json(new ApiResponse(200, null, "already merged"));
-      }
-
-      const finalPath = await mergeChunks(fileId, fileName, totalChunks);
-      if(!finalPath) {
-         throw new ApiError(500, "final path error")
-      }
-      const uploadedVideo = await uploadOnCloudinary(finalPath);
-      const video = await Video.create({
-         videoFile: uploadedVideo.url,
-         thumbnail: session.thumbnailUrl,
-         title: session.title,
-         description: session.description,
-         duration: uploadedVideo.duration,
-         owner: session.ownerId
-      });
-      delete global.uploadSessions[fileId];
-      fs.rmSync(chunkDir, { recursive: true, force: true });
-      return res
-      .status(201)
-      .json(new ApiResponse(
-         201, video, "video uploaded successfully"
-      ));
-   }
-   return res
-   .status(200)
-   .json(new ApiResponse(200, null, "chunk uploaded"))
-});   
+   if (!fs.existsSync(chunkDir)) throw new ApiError(404, "Upload session not found");
+   const received = fs.readdirSync(chunkDir)
+    .filter(f => f.startsWith('chunk_'))
+    .map(f => parseInt(f.replace('chunk_', '')));
+  return res.status(200).json(new ApiResponse(
+   200, { 
+            received 
+      }, "fetched indices of uploaded chunks"
+   ));
+})
 
 const publishAVideo = asyncHandler(async (req, res) => {
    const { title, description } = req.body;
@@ -426,5 +453,6 @@ export {
    deleteVideo,
    togglePublishStatus,
    initVideoUpload,
-   uploadVideoChunk
+   uploadVideoChunk,
+   getUploadStatus
 };
