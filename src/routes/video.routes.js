@@ -9,7 +9,8 @@ import {
    deleteVideo,
    togglePublishStatus,
    initVideoUpload,
-   uploadVideoChunk
+   uploadVideoChunk,
+   getUploadStatus
 } from "../controllers/video.controller.js";
 
 const router = Router();
@@ -35,6 +36,9 @@ router
    .patch(upload.single("thumbnail"), updateVideo)
    .delete(deleteVideo);
 
+router
+   .route("/upload-status/:fileId")
+   .get(getUploadStatus)
 router.route("/toggle/publish/:videoId").patch(togglePublishStatus);
 
 export default router;
