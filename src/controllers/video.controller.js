@@ -162,9 +162,13 @@ const initVideoUpload = asyncHandler( async (req, res) => {
 })
 
 const uploadVideoChunk = asyncHandler( async (req, res) => {
-   try{
       const { totalChunks, fileName } = req.body;
-      const { fileId } = req.params;
+      const { fileId, chunkIndex } = req.params;
+      // global.failures = global.failures || 0;
+      // if (Number(chunkIndex) === 7 && global.failures<3) {
+      //    global.failures++;
+      //    throw new ApiError(500, "SIMULATED ERROR");
+      // }
       const chunkDir = `./public/temp/chunkUploads/${fileId}`;
       if(!fs.existsSync(chunkDir)) throw new ApiError(500, "error in uploading")
       const uploadedChunks = fs
@@ -212,22 +216,16 @@ const uploadVideoChunk = asyncHandler( async (req, res) => {
       return res
       .status(200)
       .json(new ApiResponse(200, null, "chunk uploaded"))
-   } catch(err) {
-      console.log(err)
-   }
 });   
 
 const getUploadStatus = asyncHandler( async(req, res) => {
    const { fileId } = req.params;
    const chunkDir = `./public/temp/chunkUploads/${fileId}`;
    if (!fs.existsSync(chunkDir)) throw new ApiError(404, "Upload session not found");
-   const received = fs.readdirSync(chunkDir)
-    .filter(f => f.startsWith('chunk_'))
-    .map(f => parseInt(f.replace('chunk_', '')));
-  return res.status(200).json(new ApiResponse(
-   200, { 
-            received 
-      }, "fetched indices of uploaded chunks"
+   const recieved = fs.readdirSync(chunkDir)
+    .map(f => Number(f));
+   return res.status(200).json(new ApiResponse(
+      200, recieved, "fetched indices of uploaded chunks"
    ));
 })
 
