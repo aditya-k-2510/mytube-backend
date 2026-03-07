@@ -2,7 +2,7 @@ import fs from "fs";
 
 export const mergeChunks = async (fileId, fileName, totalChunks) => {
 
-   const chunkDir = `./public/temp/chunkUploads/${fileId}`;
+   const chunkDir = `./public/temp/chunkUploads/${fileId}_merging`;
    const finalPath = `${chunkDir}/${fileName}`;
 
    const writeStream = fs.createWriteStream(finalPath);
@@ -15,7 +15,9 @@ export const mergeChunks = async (fileId, fileName, totalChunks) => {
             writeStream.once("drain", resolve)
          );
       }
-      fs.unlinkSync(chunkPath);
+      if (fs.existsSync(chunkPath)) {
+         fs.unlinkSync(chunkPath);
+      }
    }
    await new Promise(resolve =>
       writeStream.end(resolve)
