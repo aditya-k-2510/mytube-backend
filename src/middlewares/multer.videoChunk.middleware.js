@@ -2,7 +2,6 @@ import fs from "fs";
 import multer from "multer";
 
 const storage = multer.diskStorage({
-
     destination: function (req, file, cb) {
         const { fileId } = req.params
         const dir = `./public/temp/chunkUploads/${fileId}`;
