@@ -10,7 +10,8 @@ import {
    togglePublishStatus,
    initVideoUpload,
    uploadVideoChunk,
-   getUploadStatus
+   getUploadStatus,
+   finishVideoUpload
 } from "../controllers/video.controller.js";
 
 const router = Router();
@@ -25,20 +26,24 @@ router
    .post(
       upload.single("thumbnail"),
       initVideoUpload)
+
 router
    .route("/chunk-upload/:fileId/:chunkIndex")
    .put(
       uploadChunk.single("chunk"),
       uploadVideoChunk)
 router
+   .route("/finish-upload/:fileId")
+   .post(finishVideoUpload)
+router
+   .route("/upload-status/:fileId")
+   .get(getUploadStatus)
+router
    .route("/:videoId")
    .get(getVideoById)
    .patch(upload.single("thumbnail"), updateVideo)
    .delete(deleteVideo);
 
-router
-   .route("/upload-status/:fileId")
-   .get(getUploadStatus)
 router.route("/toggle/publish/:videoId").patch(togglePublishStatus);
 
 export default router;
