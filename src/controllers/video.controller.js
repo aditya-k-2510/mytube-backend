@@ -159,64 +159,44 @@ const initVideoUpload = asyncHandler( async (req, res) => {
    return res
    .status(200)
    .json(new ApiResponse(200, fileId, "video upload started"))
-})
+});
 
 const uploadVideoChunk = asyncHandler( async (req, res) => {
-      const { totalChunks, fileName } = req.body;
-      const { fileId, chunkIndex } = req.params;
-      // global.failures = global.failures || 0;
-      // if (Number(chunkIndex) === 7 && global.failures<3) {
-      //    global.failures++;
-      //    throw new ApiError(500, "SIMULATED ERROR");
-      // }
-      const chunkDir = `./public/temp/chunkUploads/${fileId}`;
-      if(!fs.existsSync(chunkDir)) throw new ApiError(500, "error in uploading")
-      const uploadedChunks = fs
-                              .readdirSync(chunkDir)
-                              .filter(f => !f.includes(".") && f !== "merging.lock");
-      if (uploadedChunks.length == Number(totalChunks)) {
-         await new Promise(resolve => setTimeout(resolve, 500));
-         const session = global.uploadSessions[fileId];
-         if(!session) return res.status(410).json(new ApiResponse(410, "oh no! session expired"));
-         const existFinalPath = `./public/temp/chunkUploads/${fileId}/${fileName}`;
-         if (fs.existsSync(existFinalPath)) {
-            return res
-                     .status(200)
-                     .json(new ApiResponse(200, null, "already merged"));
-         }
-         const mergingDir = `${chunkDir}_merging`;
-         try {
-            fs.renameSync(chunkDir, mergingDir);
-         } catch {
-            return res
-               .status(200)
-               .json(new ApiResponse(200, null, "merge already in progress"));
-         }
-         const finalPath = await mergeChunks(fileId, fileName, totalChunks);
-         if(!finalPath) {
-            throw new ApiError(500, "final path error")
-         }
-         const uploadedVideo = await uploadOnCloudinary(finalPath);
-         const video = await Video.create({
-            videoFile: uploadedVideo.url,
-            thumbnail: session.thumbnailUrl,
-            title: session.title,
-            description: session.description,
-            duration: uploadedVideo.duration,
-            owner: session.ownerId
-         });
-         delete global.uploadSessions[fileId];
-         fs.rmSync(mergingDir, { recursive: true, force: true });
-         return res
-         .status(201)
-         .json(new ApiResponse(
-            201, video, "video uploaded successfully"
-         ));
-      }
+      const { chunkIndex, fileId } = req.params;
+      const chunkPath = `./public/temp/chunkUploads/${fileId}/${chunkIndex}`;
+      if(!fs.existsSync(chunkPath)) throw new ApiError(500, "error in uploading")
       return res
       .status(200)
       .json(new ApiResponse(200, null, "chunk uploaded"))
 });   
+
+const finishVideoUpload = asyncHandler( async(req, res) => {
+   const { fileId } = req.params;
+   const { fileName, totalChunks } = req.body;
+   const chunkDir = `./public/temp/chunkUploads/${fileId}`;
+   const session = global.uploadSessions[fileId];
+   if(!session) return res.status(410).json(new ApiResponse(410, "oh no! session expired"));
+   const finalPath = await mergeChunks(fileId, fileName, totalChunks);
+   if(!finalPath) {
+      throw new ApiError(500, "final path error")
+   }
+   const uploadedVideo = await uploadOnCloudinary(finalPath);
+   const video = await Video.create({
+      videoFile: uploadedVideo.url,
+      thumbnail: session.thumbnailUrl,
+      title: session.title,
+      description: session.description,
+      duration: uploadedVideo.duration,
+      owner: session.ownerId
+   });
+   delete global.uploadSessions[fileId];
+   fs.rmSync(chunkDir, { recursive: true, force: true });
+   return res
+         .status(201)
+         .json(new ApiResponse(
+      201, video, "video uploaded successfully"
+   ));
+});
 
 const getUploadStatus = asyncHandler( async(req, res) => {
    const { fileId } = req.params;
@@ -452,5 +432,6 @@ export {
    togglePublishStatus,
    initVideoUpload,
    uploadVideoChunk,
-   getUploadStatus
+   getUploadStatus,
+   finishVideoUpload
 };
