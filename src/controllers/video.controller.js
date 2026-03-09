@@ -209,38 +209,6 @@ const getUploadStatus = asyncHandler( async(req, res) => {
    ));
 })
 
-const publishAVideo = asyncHandler(async (req, res) => {
-   const { title, description } = req.body;
-   const videoLocalPath = req.files?.video[0]?.path;
-   const thumbnailLocalPath = req.files?.thumbnail[0]?.path;
-   if (!videoLocalPath || !title || !description || !thumbnailLocalPath)
-      throw new ApiError(400, "all fields are required");
-   const uploadedVideo = await uploadOnCloudinary(videoLocalPath);
-   const uploadedThumbnail = await uploadOnCloudinary(thumbnailLocalPath);
-
-   if (!uploadedVideo || !uploadedThumbnail)
-      throw new ApiError(500, "couldn't upload file/s on cloudinary");
-
-   const createdVideo = await Video.create({
-      videoFile: uploadedVideo.url,
-      thumbnail: uploadedThumbnail.url,
-      title,
-      description,
-      duration: uploadedVideo.duration,
-      owner: req.user._id,
-   })
-
-   const video = await Video.findById(createdVideo._id)
-   .select("-videoFile");
-   
-   return res.status(201).json(
-      new ApiResponse(
-         201, video,
-         "video uploaded successfully"
-      )
-   );
-});
-
 const getVideoById = asyncHandler(async (req, res) => {
    const { videoId } = req.params;
 
@@ -425,7 +393,6 @@ const togglePublishStatus = asyncHandler(async (req, res) => {
 
 export {
    getAllVideos,
-   publishAVideo,
    getVideoById,
    updateVideo,
    deleteVideo,
