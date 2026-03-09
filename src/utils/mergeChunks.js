@@ -2,7 +2,7 @@ import fs from "fs";
 
 export const mergeChunks = async (fileId, fileName, totalChunks) => {
 
-   const chunkDir = `./public/temp/chunkUploads/${fileId}_merging`;
+   const chunkDir = `./public/temp/chunkUploads/${fileId}`;
    const finalPath = `${chunkDir}/${fileName}`;
 
    const writeStream = fs.createWriteStream(finalPath);
