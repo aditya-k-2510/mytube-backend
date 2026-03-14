@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import crypto from "crypto"
 import { Video } from "../models/video.model.js";
 import { User } from "../models/user.model.js";
+import { View } from "../models/view.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -12,7 +13,7 @@ import {
    deleteFromCloudinary,
 } from "../utils/cloudinary.js";
 
-const getAllVideos = asyncHandler(async (req, res) => {
+const getAllVideos = asyncHandler( async (req, res) => {
    const { page = 1, limit = 10, query, sortBy, sortType, userId } = req.query;
 
    if (userId && !mongoose.isValidObjectId(userId))
@@ -209,7 +210,7 @@ const getUploadStatus = asyncHandler( async(req, res) => {
    ));
 })
 
-const getVideoById = asyncHandler(async (req, res) => {
+const getVideoById = asyncHandler( async (req, res) => {
    const { videoId } = req.params;
 
    const video = await Video.aggregate([
@@ -287,6 +288,7 @@ const getVideoById = asyncHandler(async (req, res) => {
       },
       {
          $project: {
+            videoFile: 1,
             owner: 1,
             likesCount: 1,
             thumbnail: 1,
@@ -307,7 +309,7 @@ const getVideoById = asyncHandler(async (req, res) => {
       .json(new ApiResponse(200, video[0], "video fetched successfully"));
 });
 
-const updateVideo = asyncHandler(async (req, res) => {
+const updateVideo = asyncHandler( async (req, res) => {
    const { videoId } = req.params;
    const video = await Video.findById(videoId);
    if (!video) throw new ApiError(404, "video not found");
@@ -346,7 +348,7 @@ const updateVideo = asyncHandler(async (req, res) => {
       .json(new ApiResponse(200, updatedVideo, "video updated successfully"));
 });
 
-const deleteVideo = asyncHandler(async (req, res) => {
+const deleteVideo = asyncHandler( async (req, res) => {
    const { videoId } = req.params;
    const video = await Video.findById(videoId);
 
@@ -374,7 +376,7 @@ const deleteVideo = asyncHandler(async (req, res) => {
       .json(new ApiResponse(200, null, "Video deleted successfully"));
 });
 
-const togglePublishStatus = asyncHandler(async (req, res) => {
+const togglePublishStatus = asyncHandler( async (req, res) => {
    const { videoId } = req.params;
    const video = await Video.findById(videoId).select("-videoFile");
 
@@ -391,6 +393,66 @@ const togglePublishStatus = asyncHandler(async (req, res) => {
       .json(new ApiResponse(200, video, "publish status changed"));
 });
 
+const postWatchProgress = asyncHandler( async (req, res) => {
+   try {
+   const viewer = req.user._id;
+   const { videoId } = req.params;
+   const { duration, watchTime} = JSON.parse(req.body);
+   console.log(videoId, duration, watchTime, viewer);
+   if (!duration) throw new ApiError(400, "duration required");
+   if (!watchTime) throw new ApiError(400, "watchTime required");
+   let view = await View.findOne(
+      {
+         viewer, 
+         video: videoId
+      }
+   );
+   let user = await User.findById(viewer);
+   let video = await Video.findById(videoId);
+   if(video.owner.equals(req.user._id)) return new res   
+                                                      .status(200)
+                                                      .json(new ApiResponse(200, "success"));
+   if(!view) {
+      view = await View.create(
+         {
+            viewer, 
+            video: videoId,
+            videoDuration: duration,
+            watchTime: watchTime
+         }
+      );
+   }
+   else {
+      view.watchTime = Math.max(watchTime, view.watchTime);
+      await view.save();
+   }
+   const percentageWatched = (view.watchTime/duration)*100;
+   if(percentageWatched>=20) {
+      //increasing the views
+      if(!view.viewCounted) {
+         await Video.updateOne(
+         { _id: videoId },
+         { $inc: { views: 1 } }
+         );
+         view.viewCounted = true;
+         await view.save();
+      }
+
+      //adding to watch history
+      user.watchHistory = user.watchHistory.filter(
+         id => id.toString() !== videoId
+      );
+      user.watchHistory.push(videoId);
+      await user.save();
+   }
+   return res
+            .status(200)
+            .json(new ApiResponse(200, "success"));
+} catch(err) {
+   console.log(err)
+}
+});
+
 export {
    getAllVideos,
    getVideoById,
@@ -400,5 +462,6 @@ export {
    initVideoUpload,
    uploadVideoChunk,
    getUploadStatus,
-   finishVideoUpload
+   finishVideoUpload,
+   postWatchProgress
 };
