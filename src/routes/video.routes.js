@@ -11,7 +11,8 @@ import {
    initVideoUpload,
    uploadVideoChunk,
    getUploadStatus,
-   finishVideoUpload
+   finishVideoUpload,
+   postWatchProgress
 } from "../controllers/video.controller.js";
 
 const router = Router();
@@ -32,12 +33,19 @@ router
    .put(
       uploadChunk.single("chunk"),
       uploadVideoChunk)
+
 router
    .route("/finish-upload/:fileId")
    .post(finishVideoUpload)
+
 router
    .route("/upload-status/:fileId")
    .get(getUploadStatus)
+
+router
+   .route("/watch-progress/:videoId")
+   .post(postWatchProgress)
+   
 router
    .route("/:videoId")
    .get(getVideoById)
