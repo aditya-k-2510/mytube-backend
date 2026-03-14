@@ -12,6 +12,7 @@ app.use(
 );
 
 app.use(express.json({ limit: "16kb" }));
+app.use(express.text());
 app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 app.use(express.static("public")); //for logos, image, etc.
 app.use(cookieParser());
