@@ -3,6 +3,8 @@ import { ApiError } from "../utils/ApiError.js";
 import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import { saveToLocal } from "../utils/localStorage.js";
+import path from "path"; 
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 
@@ -61,7 +63,6 @@ const registerUser = asyncHandler(async (req, res) => {
    const avatarLocalPath = req.files?.avatar[0]?.path;
    const coverImageLocalPath = req.files?.coverImage[0]?.path;
 
-   // console.log(avatarLocalPath)
    if (!avatarLocalPath) {
       throw new ApiError(400, "Avatar file is required");
    }
