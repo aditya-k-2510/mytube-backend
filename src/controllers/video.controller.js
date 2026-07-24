@@ -7,6 +7,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { mergeChunks } from "../utils/mergeChunks.js";
+import { saveToLocal } from "../utils/localStorage.js";
 import fs from "fs";
 import {
    uploadOnCloudinary,
@@ -175,8 +176,8 @@ const finishVideoUpload = asyncHandler( async(req, res) => {
    const { fileId } = req.params;
    const { fileName, totalChunks } = req.body;
    const chunkDir = `./public/temp/chunkUploads/${fileId}`;
-   const session = global.uploadSessions[fileId];
-   if(!session) return res.status(410).json(new ApiResponse(410, "oh no! session expired"));
+   const session = global.uploadSessions?.[fileId];
+   if(!session) return res.status(410).json(new ApiResponse(410, "oh no! session expired or server was restarted"));
    const finalPath = await mergeChunks(fileId, fileName, totalChunks);
    if(!finalPath) {
       throw new ApiError(500, "final path error")
@@ -203,6 +204,7 @@ const getUploadStatus = asyncHandler( async(req, res) => {
    const { fileId } = req.params;
    const chunkDir = `./public/temp/chunkUploads/${fileId}`;
    if (!fs.existsSync(chunkDir)) throw new ApiError(404, "Upload session not found");
+
    const recieved = fs.readdirSync(chunkDir)
     .map(f => Number(f));
    return res.status(200).json(new ApiResponse(
