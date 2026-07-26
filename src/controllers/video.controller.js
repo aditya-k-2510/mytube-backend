@@ -7,12 +7,9 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { mergeChunks } from "../utils/mergeChunks.js";
-import { saveToLocal } from "../utils/localStorage.js";
+import { saveToLocal, deleteVideoFiles } from "../utils/localStorage.js";
+import { transcodingQueue } from "../jobs/queue.js";
 import fs from "fs";
-import {
-   uploadOnCloudinary,
-   deleteFromCloudinary,
-} from "../utils/cloudinary.js";
 
 const getAllVideos = asyncHandler( async (req, res) => {
    const { page = 1, limit = 10, query, sortBy, sortType, userId } = req.query;
@@ -147,15 +144,16 @@ const getAllVideos = asyncHandler( async (req, res) => {
 const initVideoUpload = asyncHandler( async (req, res) => {
    const { title, description } = req.body;
    if (!req.file) throw new ApiError(400, "thumbnail required");
-   const thumbnailPath = req.file.path 
+   const thumbnailPath = req.file.path
    if(!thumbnailPath) throw new ApiError(500, "error in uploading")
-   const uploadedThumbnail = await uploadOnCloudinary(thumbnailPath);
    const fileId = crypto.randomUUID();
+   const savedThumbnail = saveToLocal(thumbnailPath, fileId, "thumbnail.jpg");
+   deleteFromLocal(thumbnailPath);
    global.uploadSessions = global.uploadSessions || {};
    global.uploadSessions[fileId] = {
       title,
       description,
-      thumbnailUrl: uploadedThumbnail.url,
+      thumbnailUrl: savedThumbnail.url,
       ownerId: req.user._id
    };
    return res
@@ -175,28 +173,40 @@ const uploadVideoChunk = asyncHandler( async (req, res) => {
 const finishVideoUpload = asyncHandler( async(req, res) => {
    const { fileId } = req.params;
    const { fileName, totalChunks } = req.body;
-   const chunkDir = `./public/temp/chunkUploads/${fileId}`;
    const session = global.uploadSessions?.[fileId];
    if(!session) return res.status(410).json(new ApiResponse(410, "oh no! session expired or server was restarted"));
    const finalPath = await mergeChunks(fileId, fileName, totalChunks);
    if(!finalPath) {
       throw new ApiError(500, "final path error")
    }
-   const uploadedVideo = await uploadOnCloudinary(finalPath);
    const video = await Video.create({
-      videoFile: uploadedVideo.url,
+      videoFile: null,
+      duration: 0,
       thumbnail: session.thumbnailUrl,
       title: session.title,
       description: session.description,
-      duration: uploadedVideo.duration,
-      owner: session.ownerId
+      owner: session.ownerId,
+      isPublished: false,
+      processingStatus: "queued"
    });
+
+   const job = await transcodingQueue.add("transcode", {
+      videoId: video._id.toString(),
+      inputPath: finalPath,
+      originalFileName: fileName
+   });
+
+   video.transcodingJobId = job.id;
+   await video.save();
+
    delete global.uploadSessions[fileId];
-   fs.rmSync(chunkDir, { recursive: true, force: true });
+   // TODO: invalidate cache here
+   // chunk dir is deleted by the worker's cleanup step after successful transcoding, not here
+
    return res
-         .status(201)
+         .status(202)
          .json(new ApiResponse(
-      201, video, "video uploaded successfully"
+      202, { video, jobId: job.id }, "video queued for processing"
    ));
 });
 
@@ -328,9 +338,9 @@ const updateVideo = asyncHandler( async (req, res) => {
    if (description) updatedDetails.description = description;
 
    if (thumbnailLocalPath) {
-      const thumbnail = await uploadOnCloudinary(thumbnailLocalPath);
+      const thumbnail = saveToLocal(thumbnailLocalPath, videoId, "thumbnail_updated.jpg");
       if (!thumbnail)
-         throw new ApiError(500, "error in uploading to cloudinary");
+         throw new ApiError(500, "error in saving thumbnail");
       updatedDetails.thumbnail = thumbnail.url;
    }
 
@@ -345,6 +355,7 @@ const updateVideo = asyncHandler( async (req, res) => {
          new: true,
       }
    ).select("-videoFile");
+   // TODO: invalidate cache here
    return res
       .status(200)
       .json(new ApiResponse(200, updatedVideo, "video updated successfully"));
@@ -360,18 +371,10 @@ const deleteVideo = asyncHandler( async (req, res) => {
       throw new ApiError(401, "Unauthorized request");
    }
 
-   try {
-      if (video.thumbnail) await deleteFromCloudinary(video.thumbnail);
-   } catch (err) {
-      console.log("Cloudinary delete failed:", err.message);
-   }
-   try {
-      if (video.videoFile) await deleteFromCloudinary(video.videoFile);
-   } catch (err) {
-      console.log("Cloudinary delete failed:", err.message);
-   }
+   await deleteVideoFiles(videoId);
 
    await video.deleteOne();
+   // TODO: invalidate cache here
 
    return res
       .status(200)
@@ -399,6 +402,8 @@ const postWatchProgress = asyncHandler( async (req, res) => {
    try {
    const viewer = req.user._id;
    const { videoId } = req.params;
+   const v = await Video.findById(videoId)
+   console.log(v.videoFile)
    const { duration, watchTime} = JSON.parse(req.body);
    console.log(videoId, duration, watchTime, viewer);
    if (!duration) throw new ApiError(400, "duration required");
@@ -411,9 +416,9 @@ const postWatchProgress = asyncHandler( async (req, res) => {
    );
    let user = await User.findById(viewer);
    let video = await Video.findById(videoId);
-   if(video.owner.equals(req.user._id)) return new res   
-                                                      .status(200)
-                                                      .json(new ApiResponse(200, "success"));
+   if (video.owner.equals(req.user._id)) {
+      return res.status(200).json(new ApiResponse(200, null, "success"));
+   }
    if(!view) {
       view = await View.create(
          {
@@ -436,6 +441,7 @@ const postWatchProgress = asyncHandler( async (req, res) => {
          { _id: videoId },
          { $inc: { views: 1 } }
          );
+         // TODO: invalidate cache here
          view.viewCounted = true;
          await view.save();
       }
@@ -455,6 +461,61 @@ const postWatchProgress = asyncHandler( async (req, res) => {
 }
 });
 
+const getProcessingStatus = asyncHandler( async (req, res) => {
+   const { videoId } = req.params;
+   const video = await Video.findById(videoId).select(
+      "processingStatus processingProgress processingError qualities hlsManifestUrl title transcodingJobId"
+   );
+
+   if (!video) throw new ApiError(404, "Video not found");
+
+   let jobState = null;
+   let jobProgress = null;
+   if (video.transcodingJobId) {
+      try {
+         const job = await transcodingQueue.getJob(video.transcodingJobId);
+         if (job) {
+            jobState = await job.getState();
+            jobProgress = job.progress();
+         }
+      } catch (err) {
+         console.log("Could not fetch live job state:", err.message);
+      }
+   }
+
+   return res
+      .status(200)
+      .json(new ApiResponse(200, { video, jobState, jobProgress }, "processing status fetched"));
+});
+
+const getStreamUrls = asyncHandler( async (req, res) => {
+   const { videoId } = req.params;
+   const video = await Video.findById(videoId).select(
+      "qualities hlsManifestUrl videoFile processingStatus"
+   );
+
+   if (!video) throw new ApiError(404, "Video not found");
+   if (video.processingStatus !== "ready")
+      throw new ApiError(422, "Video is not ready for streaming");
+
+   return res.status(200).json(
+      new ApiResponse(
+         200,
+         {
+            hls: video.hlsManifestUrl,
+            qualities: {
+               "360p": video.qualities?.["360p"],
+               "720p": video.qualities?.["720p"],
+               "1080p": video.qualities?.["1080p"],
+               original: video.qualities?.original,
+            },
+            fallback: video.videoFile,
+         },
+         "stream urls fetched"
+      )
+   );
+});
+
 export {
    getAllVideos,
    getVideoById,
@@ -465,5 +526,7 @@ export {
    uploadVideoChunk,
    getUploadStatus,
    finishVideoUpload,
-   postWatchProgress
+   postWatchProgress,
+   getProcessingStatus,
+   getStreamUrls
 };
