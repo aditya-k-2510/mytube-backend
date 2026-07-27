@@ -12,16 +12,19 @@ import {
    uploadVideoChunk,
    getUploadStatus,
    finishVideoUpload,
+   getProcessingStatus,
+   getStreamUrls,
    postWatchProgress
 } from "../controllers/video.controller.js";
 
 const router = Router();
 
-router.use(verifyJWT); // this applies verifyJWT middleware to all routes in this file
+router.use(verifyJWT);
 
 router
    .route("/")
    .get(getAllVideos)
+
 router
    .route("/init-upload")
    .post(
@@ -41,6 +44,14 @@ router
 router
    .route("/upload-status/:fileId")
    .get(getUploadStatus)
+
+router
+   .route("/processing-status/:videoId")
+   .get(getProcessingStatus)
+
+router
+   .route("/:videoId/stream")
+   .get(getStreamUrls)
 
 router
    .route("/watch-progress/:videoId")
