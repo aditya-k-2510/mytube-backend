@@ -1,11 +1,15 @@
 import path from "path";
 import fs from "fs";
 import ffmpeg from "fluent-ffmpeg";
+import dotenv from "dotenv";
 import { transcodingQueue } from "./queue.js";
 import { Video } from "../models/video.model.js";
 import { saveToLocal } from "../utils/localStorage.js";
 
+dotenv.config({ path: "./.env" });
+
 const CONCURRENCY = 2;
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 
 const QUALITY_PRESETS = [
    { name: "360p", width: 640, height: 360, videoBitrate: "800k", audioBitrate: "96k" },
@@ -57,6 +61,44 @@ const transcodeQuality = (inputPath, outputPath, preset) => {
    });
 };
 
+const generateQualityHLS = (inputPath, outputDir, preset) => {
+   const qualityDir = path.join(outputDir, preset.name);
+   const playlistPath = path.join(qualityDir, "playlist.m3u8");
+   return new Promise((resolve, reject) => {
+      fs.mkdirSync(qualityDir, { recursive: true });
+      ffmpeg(inputPath)
+         .videoCodec("libx264")
+         .audioCodec("aac")
+         .size(`${preset.width}x${preset.height}`)
+         .videoBitrate(preset.videoBitrate)
+         .audioBitrate(preset.audioBitrate)
+         .outputOptions([
+            "-preset fast",
+            "-profile:v main",
+            "-crf 23",
+            "-hls_time 6",
+            "-hls_list_size 0",
+            "-hls_segment_filename",
+            path.join(qualityDir, "seg_%03d.ts"),
+            "-f hls",
+         ])
+         .on("end", () => resolve({ preset, playlistPath }))
+         .on("error", (err) => reject(err))
+         .save(playlistPath);
+   });
+};
+
+const writeMasterPlaylist = (outputDir, completedQualities, baseUrl, videoId) => {
+   let manifest = "#EXTM3U\n#EXT-X-VERSION:3\n\n";
+   for (const { preset } of completedQualities) {
+      const bandwidth = parseInt(preset.videoBitrate.replace("k", ""), 10) * 1000;
+      manifest += `#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},RESOLUTION=${preset.width}x${preset.height},NAME="${preset.name}"\n`;
+      manifest += `${preset.name}/playlist.m3u8\n\n`;
+   }
+   fs.writeFileSync(path.join(outputDir, "master.m3u8"), manifest);
+   return `${baseUrl}/videos/${videoId}/hls/master.m3u8`;
+};
+
 const safeRemoveDir = (dirPath) => {
    try {
       if (dirPath && fs.existsSync(dirPath)) {
@@ -72,6 +114,7 @@ transcodingQueue.process("transcode", CONCURRENCY, async (job) => {
    const tempDir = `/tmp/transcode_${videoId}`;
    const qualities = {};
    let autoThumbnailUrl = null;
+   let hlsManifestUrl = null;
 
    console.log(`🎬 [Worker] Starting transcode for video: ${videoId} (${originalFileName})`);
 
@@ -153,6 +196,30 @@ transcodingQueue.process("transcode", CONCURRENCY, async (job) => {
          await job.progress(progress);
       }
 
+      // STEP 4.5 — GENERATE ADAPTIVE BITRATE HLS
+      console.log(`🎞️ [Worker] Generating adaptive bitrate HLS for video: ${videoId}`);
+      await job.progress(80);
+      const hlsDir = path.join("./public/videos", videoId, "hls");
+      fs.mkdirSync(hlsDir, { recursive: true });
+
+      const completedQualities = [];
+      for (const preset of applicablePresets) {
+         try {
+            const result = await generateQualityHLS(inputPath, hlsDir, preset);
+            completedQualities.push(result);
+         } catch (err) {
+            console.error(`❌ [Worker] ${preset.name} HLS generation failed for video: ${videoId} (non-fatal): ${err.message}`);
+         }
+      }
+
+      if (completedQualities.length > 0) {
+         hlsManifestUrl = writeMasterPlaylist(hlsDir, completedQualities, BASE_URL, videoId);
+         console.log(
+            `🎞️ [Worker] Adaptive bitrate HLS generated for video: ${videoId} — qualities: ${completedQualities.map((q) => q.preset.name).join(", ")}`
+         );
+      }
+      await job.progress(90);
+
       // STEP 5 — UPDATE DATABASE
       await job.progress(95);
       const primaryVideoFile =
@@ -168,8 +235,13 @@ transcodingQueue.process("transcode", CONCURRENCY, async (job) => {
       if (autoThumbnailUrl) {
          updatePayload.autoThumbnail = autoThumbnailUrl;
       }
+      if (hlsManifestUrl) {
+         updatePayload.hlsManifestUrl = hlsManifestUrl;
+      }
 
       await Video.findByIdAndUpdate(videoId, updatePayload);
+      const v = await Video.findById(videoId)
+      console.log(v)
       // TODO: invalidate cache here once cache.js exists
 
       // STEP 6 — CLEANUP
