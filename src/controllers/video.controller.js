@@ -310,6 +310,7 @@ const getVideoById = asyncHandler( async (req, res) => {
             duration: 1,
             views: 1,
             isPublished: 1,
+            processingStatus: 1,
          },
       },
    ]);
