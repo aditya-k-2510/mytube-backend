@@ -110,10 +110,10 @@ const safeRemoveDir = (dirPath) => {
 };
 
 transcodingQueue.process("transcode", CONCURRENCY, async (job) => {
-   const { videoId, inputPath, originalFileName } = job.data;
+   const { videoId, inputPath, originalFileName, needsThumbnail } = job.data;
    const tempDir = `/tmp/transcode_${videoId}`;
    const qualities = {};
-   let autoThumbnailUrl = null;
+   let thumbnailUrl = null;
    let hlsManifestUrl = null;
 
    console.log(`🎬 [Worker] Starting transcode for video: ${videoId} (${originalFileName})`);
@@ -142,15 +142,20 @@ transcodingQueue.process("transcode", CONCURRENCY, async (job) => {
       );
 
       // STEP 2 — THUMBNAIL (non-fatal)
-      console.log(`📸 [Worker] Generating thumbnail for video: ${videoId}`);
-      try {
-         const thumbPath = await generateThumbnail(inputPath, tempDir);
-         const { url } = saveToLocal(thumbPath, videoId, "thumbnail.jpg");
-         autoThumbnailUrl = url;
-         console.log(`📸 [Worker] Thumbnail saved for video: ${videoId} — ${url}`);
-      } catch (err) {
-         console.warn(`⚠️ [Worker] Thumbnail generation failed for video: ${videoId} (non-fatal): ${err.message}`);
-         autoThumbnailUrl = null;
+      if(needsThumbnail) {
+         console.log(`📸 [Worker] Generating thumbnail for video: ${videoId}`);
+         try {
+            const thumbPath = await generateThumbnail(inputPath, tempDir);
+            const { url } = saveToLocal(thumbPath, videoId, "thumbnail.jpg");
+            thumbnailUrl = url;
+            console.log(`📸 [Worker] Thumbnail saved for video: ${videoId} — ${url}`);
+         } catch (err) {
+            console.warn(`⚠️ [Worker] Thumbnail generation failed for video: ${videoId} (non-fatal): ${err.message}`);
+            thumbnailUrl = null;
+         }
+      }
+      else {
+         console.log(`📸 [Worker] User-provided thumbnail exists, skipping thumbnail generation for video: ${videoId}`);
       }
       await job.progress(10);
 
@@ -232,8 +237,8 @@ transcodingQueue.process("transcode", CONCURRENCY, async (job) => {
          processingProgress: 100,
          isPublished: true,
       };
-      if (autoThumbnailUrl) {
-         updatePayload.autoThumbnail = autoThumbnailUrl;
+      if (thumbnailUrl) {
+         updatePayload.thumbnail = thumbnailUrl;
       }
       if (hlsManifestUrl) {
          updatePayload.hlsManifestUrl = hlsManifestUrl;
