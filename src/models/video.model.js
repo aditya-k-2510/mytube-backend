@@ -9,7 +9,7 @@ const videoSchema = new Schema(
       },
       thumbnail: {
          type: String, 
-         required: true,
+         default: null,
       },
       title: {
          type: String,
@@ -79,11 +79,6 @@ const videoSchema = new Schema(
       },
 
       hlsManifestUrl: {
-         type: String,
-         default: null,
-      },
-
-      autoThumbnail: {
          type: String,
          default: null,
       },
