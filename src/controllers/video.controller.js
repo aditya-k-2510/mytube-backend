@@ -143,18 +143,18 @@ const getAllVideos = asyncHandler( async (req, res) => {
 
 const initVideoUpload = asyncHandler( async (req, res) => {
    const { title, description } = req.body;
-   if (!req.file) throw new ApiError(400, "thumbnail required");
-   const thumbnailPath = req.file.path
-   if(!thumbnailPath) throw new ApiError(500, "error in uploading")
+   // if (!req.file) throw new ApiError(400, "thumbnail required");
+   const thumbnailPath = req.file?.path || null
+   // if(!thumbnailPath) throw new ApiError(500, "error in uploading")
    const fileId = crypto.randomUUID();
-   const savedThumbnail = saveToLocal(thumbnailPath, fileId, "thumbnail.jpg");
-   deleteFromLocal(thumbnailPath);
+   // const savedThumbnail = saveToLocal(thumbnailPath, fileId, "thumbnail.jpg");
+   // deleteFromLocal(thumbnailPath);
    global.uploadSessions = global.uploadSessions || {};
    global.uploadSessions[fileId] = {
       title,
       description,
-      thumbnailUrl: savedThumbnail.url,
-      ownerId: req.user._id
+      ownerId: req.user._id, 
+      thumbnailPath: thumbnailPath || null
    };
    return res
    .status(200)
@@ -179,10 +179,10 @@ const finishVideoUpload = asyncHandler( async(req, res) => {
    if(!finalPath) {
       throw new ApiError(500, "final path error")
    }
+   
    const video = await Video.create({
       videoFile: null,
       duration: 0,
-      thumbnail: session.thumbnailUrl,
       title: session.title,
       description: session.description,
       owner: session.ownerId,
@@ -190,10 +190,17 @@ const finishVideoUpload = asyncHandler( async(req, res) => {
       processingStatus: "queued"
    });
 
+   if(global.uploadSessions[fileId].thumbnailPath) {
+      const savedThumbnail = saveToLocal(global.uploadSessions[fileId].thumbnailPath, video._id, "thumbnail.jpg");
+      video.thumbnail = savedThumbnail.url;
+      deleteFromLocal(global.uploadSessions[fileId].thumbnailPath);
+   }
+
    const job = await transcodingQueue.add("transcode", {
       videoId: video._id.toString(),
       inputPath: finalPath,
-      originalFileName: fileName
+      originalFileName: fileName,
+      needsThumbnail: !global.uploadSessions[fileId].thumbnailPath,
    });
 
    video.transcodingJobId = job.id;
