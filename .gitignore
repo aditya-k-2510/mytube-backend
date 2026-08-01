@@ -3,3 +3,4 @@ node_modules
 src/test
 public/temp
 public/videos
+.DS_Store
