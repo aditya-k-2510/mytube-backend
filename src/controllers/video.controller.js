@@ -144,12 +144,8 @@ const getAllVideos = asyncHandler( async (req, res) => {
 
 const initVideoUpload = asyncHandler( async (req, res) => {
    const { title, description } = req.body;
-   // if (!req.file) throw new ApiError(400, "thumbnail required");
    const thumbnailPath = req.file?.path || null
-   // if(!thumbnailPath) throw new ApiError(500, "error in uploading")
    const fileId = crypto.randomUUID();
-   // const savedThumbnail = saveToLocal(thumbnailPath, fileId, "thumbnail.jpg");
-   // deleteFromLocal(thumbnailPath);
    const sessionData = {
       title,
       description,
