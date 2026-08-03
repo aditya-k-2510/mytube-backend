@@ -9,6 +9,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { mergeChunks } from "../utils/mergeChunks.js";
 import { saveToLocal, deleteFromLocal, deleteVideoFiles } from "../utils/localStorage.js";
 import { transcodingQueue } from "../jobs/queue.js";
+import * as cache from "../utils/cache.js";
 import fs from "fs";
 
 const getAllVideos = asyncHandler( async (req, res) => {
@@ -149,13 +150,13 @@ const initVideoUpload = asyncHandler( async (req, res) => {
    const fileId = crypto.randomUUID();
    // const savedThumbnail = saveToLocal(thumbnailPath, fileId, "thumbnail.jpg");
    // deleteFromLocal(thumbnailPath);
-   global.uploadSessions = global.uploadSessions || {};
-   global.uploadSessions[fileId] = {
+   const sessionData = {
       title,
       description,
-      ownerId: req.user._id, 
+      ownerId: req.user._id.toString(),
       thumbnailPath: thumbnailPath || null
    };
+   await cache.set(`upload-session:${fileId}`, sessionData, 7200);
    return res
    .status(200)
    .json(new ApiResponse(200, fileId, "video upload started"))
@@ -173,13 +174,13 @@ const uploadVideoChunk = asyncHandler( async (req, res) => {
 const finishVideoUpload = asyncHandler( async(req, res) => {
    const { fileId } = req.params;
    const { fileName, totalChunks } = req.body;
-   const session = global.uploadSessions?.[fileId];
+   const session = await cache.get(`upload-session:${fileId}`);
    if(!session) return res.status(410).json(new ApiResponse(410, "oh no! session expired or server was restarted"));
    const finalPath = await mergeChunks(fileId, fileName, totalChunks);
    if(!finalPath) {
       throw new ApiError(500, "final path error")
    }
-   
+
    const video = await Video.create({
       videoFile: null,
       duration: 0,
@@ -190,23 +191,23 @@ const finishVideoUpload = asyncHandler( async(req, res) => {
       processingStatus: "queued"
    });
 
-   if(global.uploadSessions[fileId].thumbnailPath) {
-      const savedThumbnail = saveToLocal(global.uploadSessions[fileId].thumbnailPath, video._id, "thumbnail.jpg");
+   if(session.thumbnailPath) {
+      const savedThumbnail = saveToLocal(session.thumbnailPath, video._id, "thumbnail.jpg");
       video.thumbnail = savedThumbnail.url;
-      deleteFromLocal(global.uploadSessions[fileId].thumbnailPath);
+      deleteFromLocal(session.thumbnailPath);
    }
 
    const job = await transcodingQueue.add("transcode", {
       videoId: video._id.toString(),
       inputPath: finalPath,
       originalFileName: fileName,
-      needsThumbnail: !global.uploadSessions[fileId].thumbnailPath,
+      needsThumbnail: !session.thumbnailPath,
    });
 
    video.transcodingJobId = job.id;
    await video.save();
 
-   delete global.uploadSessions[fileId];
+   await cache.del(`upload-session:${fileId}`);
    // TODO: invalidate cache here
    // chunk dir is deleted by the worker's cleanup step after successful transcoding, not here
 
@@ -410,8 +411,6 @@ const postWatchProgress = asyncHandler( async (req, res) => {
    try {
    const viewer = req.user._id;
    const { videoId } = req.params;
-   const v = await Video.findById(videoId)
-   console.log(v.videoFile)
    const { duration, watchTime} = JSON.parse(req.body);
    console.log(videoId, duration, watchTime, viewer);
    if (!duration) throw new ApiError(400, "duration required");
@@ -424,6 +423,7 @@ const postWatchProgress = asyncHandler( async (req, res) => {
    );
    let user = await User.findById(viewer);
    let video = await Video.findById(videoId);
+   console.log(video.videoFile)
    if (video.owner.equals(req.user._id)) {
       return res.status(200).json(new ApiResponse(200, null, "success"));
    }
