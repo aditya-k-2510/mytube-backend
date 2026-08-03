@@ -190,7 +190,7 @@ const finishVideoUpload = asyncHandler( async(req, res) => {
       isPublished: false,
       processingStatus: "queued"
    });
-
+   console.log(`upload finished for ${fileId}`);
    if(session.thumbnailPath) {
       const savedThumbnail = saveToLocal(session.thumbnailPath, video._id, "thumbnail.jpg");
       video.thumbnail = savedThumbnail.url;
