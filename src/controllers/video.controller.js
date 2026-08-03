@@ -494,6 +494,13 @@ const getProcessingStatus = asyncHandler( async (req, res) => {
 
 const getStreamUrls = asyncHandler( async (req, res) => {
    const { videoId } = req.params;
+
+   const cached = await cache.get(`stream:${videoId}`);
+   if (cached) {
+      console.log(`CACHE HIT FOR stream: ${videoId}`);
+      return res.status(200).json(new ApiResponse(200, cached, "stream urls fetched"));
+   }
+   console.log(`CACHE MISS FOR stream: ${videoId}`);
    const video = await Video.findById(videoId).select(
       "qualities hlsManifestUrl videoFile processingStatus"
    );
@@ -502,21 +509,21 @@ const getStreamUrls = asyncHandler( async (req, res) => {
    if (video.processingStatus !== "ready")
       throw new ApiError(422, "Video is not ready for streaming");
 
+   const responseData = {
+      hls: video.hlsManifestUrl,
+      qualities: {
+         "360p": video.qualities?.["360p"],
+         "720p": video.qualities?.["720p"],
+         "1080p": video.qualities?.["1080p"],
+         original: video.qualities?.original,
+      },
+      fallback: video.videoFile,
+   };
+
+   await cache.set(`stream:${videoId}`, responseData, 86400);
+
    return res.status(200).json(
-      new ApiResponse(
-         200,
-         {
-            hls: video.hlsManifestUrl,
-            qualities: {
-               "360p": video.qualities?.["360p"],
-               "720p": video.qualities?.["720p"],
-               "1080p": video.qualities?.["1080p"],
-               original: video.qualities?.original,
-            },
-            fallback: video.videoFile,
-         },
-         "stream urls fetched"
-      )
+      new ApiResponse(200, responseData, "stream urls fetched")
    );
 });
 
