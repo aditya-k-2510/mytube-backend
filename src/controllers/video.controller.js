@@ -29,6 +29,17 @@ const getAllVideos = asyncHandler( async (req, res) => {
    if (pageNumber < 1 || pageLimit < 1)
       throw new ApiError(400, "Invalid pagination parameters");
 
+   const queryHash = crypto.createHash("md5")
+      .update(JSON.stringify({ page, limit, query, sortBy, sortType, userId }))
+      .digest("hex");
+   const cacheKey = `videos:${queryHash}`;
+
+   const cached = await cache.get(cacheKey);
+   if (cached) {
+      console.log(`cache HIT for getAllVideos: ${queryHash}`)
+      return res.status(200).json(new ApiResponse(200, cached, "videos fetched"));
+   }
+   console.log(`cache MISS for getAllVideos: ${queryHash}`);
    const matchStage = {
       isPublished: true,
       ...(userId && {
@@ -128,17 +139,17 @@ const getAllVideos = asyncHandler( async (req, res) => {
 
    const totalVideos = totalVideosAgg[0]?.total || 0;
 
+   const responseData = {
+      videos,
+      totalVideos,
+      currentPage: pageNumber,
+      totalPages: Math.ceil(totalVideos / pageLimit),
+   };
+
+   await cache.set(cacheKey, responseData, 300);
+
    return res.status(200).json(
-      new ApiResponse(
-         200,
-         {
-            videos,
-            totalVideos,
-            currentPage: pageNumber,
-            totalPages: Math.ceil(totalVideos / pageLimit),
-         },
-         "videos fetched"
-      )
+      new ApiResponse(200, responseData, "videos fetched")
    );
 });
 
