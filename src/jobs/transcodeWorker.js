@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { transcodingQueue } from "./queue.js";
 import { Video } from "../models/video.model.js";
 import { saveToLocal } from "../utils/localStorage.js";
+import * as cache from "../utils/cache.js";
 
 dotenv.config({ path: "./.env" });
 
@@ -247,7 +248,7 @@ transcodingQueue.process("transcode", CONCURRENCY, async (job) => {
       await Video.findByIdAndUpdate(videoId, updatePayload);
       const v = await Video.findById(videoId)
       console.log(v)
-      // TODO: invalidate cache here once cache.js exists
+      await cache.flush("videos:*");
 
       // STEP 6 — CLEANUP
       await job.progress(100);

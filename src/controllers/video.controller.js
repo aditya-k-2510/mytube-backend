@@ -215,7 +215,7 @@ const finishVideoUpload = asyncHandler( async(req, res) => {
    await video.save();
 
    await cache.del(`upload-session:${fileId}`);
-   // TODO: invalidate cache here
+   await cache.flush("videos:*");
    // chunk dir is deleted by the worker's cleanup step after successful transcoding, not here
 
    return res
@@ -371,7 +371,7 @@ const updateVideo = asyncHandler( async (req, res) => {
          new: true,
       }
    ).select("-videoFile");
-   // TODO: invalidate cache here
+   await cache.flush("videos:*");
    return res
       .status(200)
       .json(new ApiResponse(200, updatedVideo, "video updated successfully"));
@@ -390,7 +390,8 @@ const deleteVideo = asyncHandler( async (req, res) => {
    await deleteVideoFiles(videoId);
 
    await video.deleteOne();
-   // TODO: invalidate cache here
+   await cache.del(`stream:${videoId}`);
+   await cache.flush("videos:*");
 
    return res
       .status(200)
@@ -408,7 +409,8 @@ const togglePublishStatus = asyncHandler( async (req, res) => {
    }
    video.isPublished = !video.isPublished;
    await video.save();
-   
+   await cache.flush("videos:*");
+
    return res
       .status(200)
       .json(new ApiResponse(200, video, "publish status changed"));
