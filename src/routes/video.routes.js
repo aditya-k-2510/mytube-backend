@@ -4,6 +4,7 @@ import { upload } from "../middlewares/multer.middleware.js";
 import { uploadChunk } from "../middlewares/multer.videoChunk.middleware.js"
 import {
    getAllVideos,
+   getHomeRecommendations,
    getVideoById,
    updateVideo,
    deleteVideo,
@@ -56,7 +57,11 @@ router
 router
    .route("/watch-progress/:videoId")
    .post(postWatchProgress)
-   
+
+router
+   .route("/recommendations/home")
+   .get(getHomeRecommendations)
+
 router
    .route("/:videoId")
    .get(getVideoById)
