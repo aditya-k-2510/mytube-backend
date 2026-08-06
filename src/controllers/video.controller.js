@@ -3,6 +3,7 @@ import crypto from "crypto"
 import { Video } from "../models/video.model.js";
 import { User } from "../models/user.model.js";
 import { View } from "../models/view.model.js";
+import { Subscription } from "../models/subscription.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -199,7 +200,7 @@ const finishVideoUpload = asyncHandler( async(req, res) => {
    });
    console.log(`upload finished for ${fileId}`);
    if(session.thumbnailPath) {
-      const savedThumbnail = saveToLocal(session.thumbnailPath, video._id, "thumbnail.jpg");
+      const savedThumbnail = saveToLocal(session.thumbnailPath, video._id.toString(), "thumbnail.jpg");
       video.thumbnail = savedThumbnail.url;
       deleteFromLocal(session.thumbnailPath);
    }
