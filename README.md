@@ -77,13 +77,22 @@ The backend never receives a whole video file in one request — it only ever se
    - Looks up the session in Redis (`upload-session:{fileId}`). If it's gone (TTL expired, or Redis/server restarted), returns **410 Gone** — the client has to restart the upload.
    - Calls `mergeChunks(fileId, fileName, totalChunks)` ([mergeChunks.js](src/utils/mergeChunks.js)), which streams each chunk file into a single write stream in index order, respecting backpressure (`drain` events), deleting each chunk file as it's consumed.
    - Creates the `Video` document in MongoDB with `processingStatus: "queued"`, `isPublished: false`, `videoFile: null`.
-   - If a thumbnail was provided at init time, copies it from temp into permanent storage via `saveToLocal`.
+   - If a thumbnail was provided at init time, copies it from temp into permanent storage via `saveToLocal`. **The thumbnail is optional** — if omitted, the worker auto-generates one during transcoding (see below).
    - Enqueues a `"transcode"` job on `transcodingQueue` ([queue.js](src/jobs/queue.js)) with `videoId`, `inputPath` (the merged file), `originalFileName`, and `needsThumbnail` (true only if no thumbnail was supplied).
    - Stores the returned `job.id` on the video document as `transcodingJobId`.
    - Deletes the Redis upload session and flushes the `videos:*` cache (a new, if unpublished, video shouldn't matter to cached listings yet, but this keeps state consistent).
    - Returns **202 Accepted** with the video document and job ID — the client polls from here.
 
 The merged chunk file and its parent chunk directory are cleaned up by the **worker**, not the API, once transcoding finishes successfully — so a failed job leaves the source file in place for retry.
+
+## Thumbnail Generation
+
+Thumbnails are optional at upload time. If the user doesn't provide one, the worker generates one automatically.
+
+In [transcodeWorker.js](src/jobs/transcodeWorker.js), **Step 2** of the `transcodingQueue.process("transcode", ...)` handler runs conditionally on the `needsThumbnail` flag from the job payload:
+
+- **`needsThumbnail: true`** (no user-provided thumbnail) — `generateThumbnail` extracts a frame from the source video at the 2-second mark via FFmpeg, saves it to local storage, and the resulting URL is written to the video document's `thumbnail` field once transcoding completes. Failure to generate a thumbnail here is non-fatal — the video still proceeds through the rest of the pipeline with `thumbnail` left as-is.
+- **`needsThumbnail: false`** (thumbnail already supplied at init/finish-upload) — Step 2 is skipped entirely; the user-provided thumbnail is left untouched.
 
 ## Adaptive Bitrate Streaming — Generation
 
@@ -141,6 +150,26 @@ All caching goes through [cache.js](src/utils/cache.js) — a thin wrapper over 
 
 **The deliberate gap: `getVideoById` is not cached.** This is the single-video detail endpoint — it's the one place likes count, subscriber count, and `isSubscribed` are computed per-viewer via `$lookup`/`$cond` on `req.user`. Caching it naively would either cache per-user (defeating the purpose — cache key would be the same as no cache for a single viewer) or serve one viewer's subscription state to another. It's also refreshed on every like/subscribe action from the client today (`fetchVideoData()` re-fetch), so a stale cache would visibly contradict the action a user just took. The honest trade-off: this is the most frequently-hit read path (every video page view) and currently gets zero caching benefit — a viewer-agnostic cache split from the per-viewer fields would fix this, but hasn't been built.
 
+## Recommendation System
+
+`GET /videos/recommendations/home` ([video.controller.js](src/controllers/video.controller.js) → `getHomeRecommendations`) replaces the generic "all videos" home feed with a personalized, scored ranking. It requires authentication.
+
+Every **published, ready** video in the database is scored:
+
+```
+score = subscriptionBoost + views + (createdAt / 1e9)
+```
+
+- **`subscriptionBoost`** — `2000` if the video's owner is a channel the requesting user subscribes to, `0` otherwise.
+- **`views`** — the raw view count, used as a popularity signal.
+- **recency weight** — the video's `createdAt` timestamp divided by `1e9`, a small tiebreaker that favors newer content without overpowering subscription/popularity signals.
+
+Videos are sorted by `score` descending, then paginated (`page`/`limit`, same as `getAllVideos`). A search `query`, if provided, filters within the scored result set before pagination — same `$regex` match against `title`/`description` as `getAllVideos`. Because of how the score is composed, higher-priority content (subscribed channels, popular videos) naturally surfaces on page 1, while lower-priority content falls to later pages.
+
+The response shape is identical to `getAllVideos` (`{ videos, totalVideos, currentPage, totalPages }`), so the frontend `VideoCard` and pagination UI required zero changes to consume this endpoint.
+
+This is deliberately heuristic-based rather than ML-driven — at this scale, an explicit subscription signal is a stronger, more predictable ranking input than any learned model could produce without substantial training data.
+
 ## API Endpoints
 
 All routes below are mounted under `/api/v1/videos` and require `verifyJWT` ([auth.middleware.js](src/middlewares/auth.middleware.js)) — a valid `accessToken` cookie or `Authorization: Bearer <token>` header.
@@ -160,6 +189,7 @@ All routes below are mounted under `/api/v1/videos` and require `verifyJWT` ([au
 | Method | Path | Body | Response |
 |---|---|---|---|
 | `GET` | `/` | query: `page`, `limit`, `query`, `sortBy` (`duration`\|`createdAt`\|`views`), `sortType`, `userId` | `200` → `{ data: { videos, totalVideos, currentPage, totalPages } }` |
+| `GET` | `/recommendations/home` | query: `page`, `limit`, `query` (same as `getAllVideos`) | `200` → `{ data: { videos, totalVideos, currentPage, totalPages } }`; personalized, scored ranking — see [Recommendation System](#recommendation-system) |
 | `GET` | `/:videoId/stream` | — | `200` → `{ data: { hls, qualities: {360p,720p,1080p,original}, fallback } }`, or `422` if not `ready` |
 | `GET` | `/:videoId` | — | `200` → `{ data: video }` with `owner`, `likesCount`, `subscriberCount`, `isSubscribed` populated |
 | `PATCH` | `/:videoId` | multipart: optional `title`, `description`, `thumbnail` | `200` → `{ data: updatedVideo }`; owner-only |
