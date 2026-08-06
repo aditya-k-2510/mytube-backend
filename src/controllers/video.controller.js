@@ -154,6 +154,100 @@ const getAllVideos = asyncHandler( async (req, res) => {
    );
 });
 
+const getHomeRecommendations = asyncHandler( async (req, res) => {
+   const { page = 1, limit = 12, query } = req.query;
+   const pageNumber = Number(page);
+   const pageLimit = Number(limit);
+   const skip = (pageNumber - 1) * pageLimit;
+
+   const userId = req.user._id;
+
+   // Only fetch subscriptions — for scoring, not exclusion
+   const subscriptions = await Subscription.find({ 
+      subscriber: userId 
+   }).distinct("channel");
+
+   const matchConditions = {
+      processingStatus: "ready",
+      isPublished: true,
+      ...(query && {
+         $or: [
+            { title: { $regex: query, $options: "i" } },
+            { description: { $regex: query, $options: "i" } },
+         ]
+      }),
+   };
+
+   const [videos, totalVideos] = await Promise.all([
+      Video.aggregate([
+         { $match: matchConditions },
+         {
+            $addFields: {
+               subscriptionBoost: {
+                  $cond: {
+                     if: { $in: ["$owner", subscriptions] },
+                     then: 2000,
+                     else: 0,
+                  },
+               },
+            },
+         },
+         {
+            $addFields: {
+               score: {
+                  $add: [
+                     "$subscriptionBoost",
+                     "$views",
+                     { $divide: [{ $toLong: "$createdAt" }, 1000000000] },
+                  ],
+               },
+            },
+         },
+         { $sort: { score: -1 } },
+         { $skip: skip },
+         { $limit: pageLimit },
+         {
+            $lookup: {
+               from: "users",
+               localField: "owner",
+               foreignField: "_id",
+               as: "owner",
+            },
+         },
+         { $unwind: "$owner" },
+         {
+            $addFields: {
+               channelName: "$owner.username",
+               channelAvatar: "$owner.avatar",
+               ownerName: "$owner.fullName",
+            },
+         },
+         {
+            $project: {
+               _id: 1,
+               thumbnail: 1,
+               title: 1,
+               description: 1,
+               duration: 1,
+               views: 1,
+               channelName: 1,
+               channelAvatar: 1,
+               ownerName: 1,
+               isPublished: 1,
+            },
+         },
+      ]),
+      Video.countDocuments(matchConditions),
+   ]);
+
+   return res.status(200).json(new ApiResponse(200, {
+      videos,
+      totalVideos,
+      currentPage: pageNumber,
+      totalPages: Math.ceil(totalVideos / pageLimit),
+   }, "recommendations fetched"));
+});
+
 const initVideoUpload = asyncHandler( async (req, res) => {
    const { title, description } = req.body;
    const thumbnailPath = req.file?.path || null
@@ -543,6 +637,7 @@ const getStreamUrls = asyncHandler( async (req, res) => {
 
 export {
    getAllVideos,
+   getHomeRecommendations,
    getVideoById,
    updateVideo,
    deleteVideo,
